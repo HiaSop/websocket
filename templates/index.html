@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>服务器网站（5000）</title>
+    <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>服务器网站 (https://localhost:5000)</h1>
+
+    <form method="POST" action="/send_form_request">
+        <button type="submit">📋 发送统计请求</button>
+    </form>
+
+    <h2>📥 来自客户端的消息：</h2>
+    <div id="client_messages"></div>
+
+    <script>
+        const socket = io('https://localhost:5000', {
+            transports: ['websocket'],
+            secure: true,
+            rejectUnauthorized: false
+        });
+
+        socket.on('log_to_console_page', (data) => {
+            const msgDiv = document.getElementById('client_messages');
+            const p = document.createElement('p');
+            p.textContent = "🧾 " + data.msg;
+            msgDiv.appendChild(p);
+        });
+    </script>
+</body>
+</html>
+"""
