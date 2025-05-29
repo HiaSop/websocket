@@ -5,10 +5,11 @@ from flask_socketio import SocketIO, send, emit, disconnect
 
 
 # 生成设备ID（如果未注册，需先通过服务端API创建）
-DEVICE_ID = "f912c125-b47d-4f4e-be05-5009185e85b4"  # 示例：替换为实际设备ID
+DEVICE_ID = "1"  # 示例：替换为实际设备ID
+SERVER_URL = "https://localhost:5000"
 
 # 创建客户端实例
-client_sio = socketio.Client(ssl_verify="server.crt")
+client_sio = socketio.Client(ssl_verify=False) #自签名证书，开发环境不验证
 
 @client_sio.event
 def connect():
@@ -48,7 +49,7 @@ def start_socket():
     try:
         # 连接时传递 device_id 和 password
         client_sio.connect(
-            f'http://localhost:5000?device_id={DEVICE_ID}',
+            f'https://localhost:5000?device_id={DEVICE_ID}',
             transports=['websocket'],
         )
 
@@ -68,3 +69,41 @@ def start_socket():
         print(f'[错误] 连接失败: {e}')
     except KeyboardInterrupt:
         client_sio.disconnect()
+
+@client_sio.event
+def chain_step(data):
+    """统一处理链式计算步骤"""
+    prev_result = data.get("prev_result")  # 上一台设备的计算结果
+    target_cert = data.get("target_cert")  # 当前设备要传给下一个设备的证书
+
+    print(f'[链式任务] 收到链式任务，目标证书: {target_cert[:8]}')
+
+    # 模拟计算：组合结果
+    local_result = f"{prev_result}|Device{DEVICE_ID}|cert:{target_cert[:8]}"
+    print(f'[链式任务] 本地计算结果: {local_result}')
+
+    # 将结果发送回服务器
+    client_sio.emit("chain_response", {
+        "device_id": DEVICE_ID,
+        "result": local_result
+    })
+    print(f'[链式任务] 结果已发回服务器')
+
+
+@client_sio.event
+def chain_complete(data):
+    """接收链条最终结果（服务器返回到第一个设备）"""
+    final_input = data.get("final_input")
+    print(f'[链式任务] 收到最终结果: {final_input}')
+
+    # 模拟最终处理（比如解密或保存）
+    processed = final_input + "123"
+
+    # 向服务器报告最终处理完成（可选）
+    client_sio.emit("chain_response", {
+        "device_id": DEVICE_ID,
+        "final_result": processed
+    })
+    print(f'[链式任务] 最终处理完成，结果: {processed}')
+
+
