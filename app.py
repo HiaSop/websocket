@@ -1,8 +1,12 @@
-from flask import Flask, render_template, request, jsonify, render_template_string
+from flask import Flask, render_template, request, jsonify, render_template_string, flash, session, redirect, url_for
 from flask_socketio import SocketIO, send, emit, disconnect
-from models import db, Device
+from models import db, Device, Admin
 from config import Config
 from datetime import datetime, timedelta
+from socket_events import register_socket_events
+from routes import register_routes
+from flask_mail import Mail
+import redis
 
 app = Flask(__name__)
 # 允许所有跨域
@@ -10,56 +14,32 @@ app.config.from_object(Config)
 db.init_app(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-with app.app_context():
-    db.create_all()
+# 初始化邮箱
+mail = Mail(app)
 
-# -----------------------------------------------------------------------------------------------
-# WebSocket 事件处理
-# -----------------------------------------------------------------------------------------------
+# 初始化 Redis
+r = redis.StrictRedis(
+    host=app.config['REDIS_HOST'],
+    port=app.config['REDIS_PORT'],
+    db=app.config['REDIS_DB'],
+    decode_responses=True
+)
 
-# 客户端连接时触发
-@socketio.on('connect')
-def handle_connect():
-    """设备连接时验证并更新状态"""
-    device_id = request.args.get('device_id')
-
-    # 检查 device_id 是否存在
-    if not device_id:
-        print("")
-        emit('error', '缺少 device_id 参数')
-        disconnect()
-        return
-    device = db.session.get(Device, device_id)
-    if not device:
-        print("Device not found")
-        disconnect()
-        return
-
-    # 更新设备状态
-    device.is_active = True
-    device.websocket_id = request.sid
-    device.last_heartbeat = datetime.now()
-    db.session.commit()
-
-    emit('status', {'is_active': True, 'device_id': device_id})
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    """设备断开时更新状态"""
-    device = Device.query.filter_by(websocket_id=request.sid).first()
-    if device:
-        device.is_active = False
-        device.websocket_id = None
-        db.session.commit()
-
-@socketio.on('heartbeat')
-def handle_heartbeat():
-    """处理心跳包"""
-    device = Device.query.filter_by(websocket_id=request.sid).first()
-    if device:
-        device.last_heartbeat = datetime.now()
-        db.session.commit()
+register_routes(app,socketio,mail,r)
+register_socket_events(socketio)
 
 if __name__ == '__main__':
     print("✅ 启动服务器：https://localhost:5000")
+    with app.app_context():
+        db.create_all()
+
+        # 创建管理员账号（只添加一次）
+        if not Admin.query.filter_by(username='admin').first():
+            admin = Admin(username='admin')
+            admin.set_password('123456')  # 密码加密
+            db.session.add(admin)
+            db.session.commit()
+            print("✅ 管理员账号已创建：admin / 123456")
+        else:
+            print("ℹ️ 管理员账号已存在")
     socketio.run(app, port=5000, ssl_context=('server.crt', 'server.key'), debug=True)

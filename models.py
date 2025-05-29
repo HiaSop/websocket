@@ -16,10 +16,14 @@ class Device(db.Model):
     last_heartbeat = db.Column(db.DateTime)
     certificate = db.Column(db.Text, nullable=True) # 新增字段用于保存设备证书
 
+class Admin(db.Model):
+    __tablename__ = 'admin'
+
+    username = db.Column(db.String(64), primary_key=True, unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+
     def set_password(self, password):
-        """加密密码"""
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
-        """验证密码"""
         return check_password_hash(self.password_hash, password)
