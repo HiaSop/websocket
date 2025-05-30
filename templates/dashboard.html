@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>用户控制面板</title>
+    <!-- 引入 SweetAlert2 和 Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+
+        /* 美化右上角按钮 */
+        #user-consent-btn, #unbind-email-btn {
+            position: fixed;
+            right: 20px;
+            padding: 12px 18px;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 1000;
+            transition: background-color 0.3s ease;
+        }
+
+        #user-consent-btn {
+            top: 20px;
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        #user-consent-btn:hover {
+            background-color: #45a049;
+        }
+
+        #unbind-email-btn {
+            top: 70px;
+            background-color: #EF4444;
+            color: white;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        #unbind-email-btn:hover {
+            background-color: #dc2626;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen p-6">
+    <!-- 顶部欢迎信息 -->
+    <h1 class="text-2xl font-semibold text-center mb-8">欢迎登录！User: {{ user_email }}</h1>
+
+    <!-- 右上角按钮 -->
+    <button id="user-consent-btn" onclick="showUserConsent()">📝 修改用户统计意愿</button>
+    <a href="/unbind_email" id="unbind-email-btn">📤 解绑邮箱</a>
+
+    <!-- 中控面板内容 -->
+    <div class="w-full max-w-5xl mx-auto">
+        <h2 class="text-3xl font-semibold mb-6 text-center">🏠 智能中控系统</h2>
+
+        <!-- 状态面板 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-5 rounded-2xl shadow-md border border-gray-200">
+                <h3 class="text-xl font-semibold mb-2">智能灯</h3>
+                <p>状态：<span class="text-green-600 font-medium">已开启</span></p>
+                <p>亮度：80%</p>
+                <p>颜色：暖白</p>
+                <button class="mt-4 px-4 py-2 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600">切换状态</button>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl shadow-md border border-gray-200">
+                <h3 class="text-xl font-semibold mb-2">智能插座</h3>
+                <p>状态：<span class="text-red-600 font-medium">关闭</span></p>
+                <p>电压：220V</p>
+                <p>功率：0 W</p>
+                <button class="mt-4 px-4 py-2 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600">切换状态</button>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl shadow-md border border-gray-200">
+                <h3 class="text-xl font-semibold mb-2">摄像头</h3>
+                <p>状态：<span class="text-green-600 font-medium">在线</span></p>
+                <p>最后上传：2025-05-30 13:24</p>
+                <button class="mt-4 px-4 py-2 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600">查看视频</button>
+            </div>
+        </div>
+
+        <!-- 环境监控 -->
+        <div class="bg-white p-6 rounded-2xl shadow-md border border-gray-200 mb-6">
+            <h3 class="text-2xl font-semibold mb-4">🌡️ 室内环境监控</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <p class="text-gray-500 mb-1">温度</p>
+                    <p class="text-3xl font-bold">25.6℃</p>
+                </div>
+                <div>
+                    <p class="text-gray-500 mb-1">湿度</p>
+                    <p class="text-3xl font-bold">58%</p>
+                </div>
+                <div>
+                    <p class="text-gray-500 mb-1">空气质量</p>
+                    <p class="text-3xl font-bold">良好</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 控制按钮 -->
+        <div class="flex justify-center space-x-4">
+            <button class="px-6 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600">一键开启所有设备</button>
+            <button class="px-6 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600">一键关闭所有设备</button>
+        </div>
+    </div>
+
+    <!-- JS 脚本 -->
+    <script>
+        function showUserConsent() {
+            Swal.fire({
+                title: '📊 用户需知',
+                text: '是否愿意参与匿名使用统计？',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: '是',
+                cancelButtonText: '不是'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({
+                        title: '感谢参与！',
+                        text: '请输入当前单位的用电量（千瓦时）:',
+                        input: 'number',
+                        inputPlaceholder: '例如：350',
+                        inputAttributes: {
+                            min: 0,
+                            step: 1
+                        },
+                        showCancelButton: true,
+                        confirmButtonText: '提交',
+                    }).then((inputResult) => {
+                        if (inputResult.isConfirmed) {
+                            let usage = inputResult.value || '未提供';
+                            Swal.fire('✅ 已记录', `您填写的用电量是：${usage} 千瓦时`, 'success');
+
+                            fetch('/log-statistics', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    decision: 1,
+                                    electricity_usage: usage
+                                })
+                            });
+                        }
+                    });
+                } else {
+                    Swal.fire('🙁 好的', '您已选择不参与统计', 'info');
+
+                    fetch('/log-statistics', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            decision: 0
+                        })
+                    });
+                }
+            });
+        }
+
+        window.onload = function () {
+            // flash 消息处理
+            let flashMessages = [];
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                flashMessages = {{ messages|tojson }};
+            {% endif %}
+            {% endwith %}
+
+            if (flashMessages.length > 0) {
+                const [category, message] = flashMessages[0];
+                Swal.fire({
+                    title: category === 'success' ? '✅ 成功' :
+                           category === 'danger' ? '❌ 错误' : 'ℹ️ 提示',
+                    text: message,
+                    icon: category === 'success' ? 'success' :
+                          category === 'danger' ? 'error' : 'info',
+                    timer: 1000,
+                    timerProgressBar: true,
+                    showConfirmButton: false
+                });
+            }
+
+            // 自动弹窗延迟触发
+            setTimeout(() => {
+                showUserConsent();
+            }, 1200);
+        };
+    </script>
+</body>
+</html>
