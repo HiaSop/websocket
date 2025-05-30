@@ -47,3 +47,23 @@ def register_socket_events(socketio):
         if device:
             device.last_heartbeat = datetime.now()
             db.session.commit()
+
+    @socketio.on('user_decision')
+    def handle_user_decision(data):
+        device_id = data.get('device_id')
+        decision = data.get('decision')
+
+        # 转换 decision 为布尔
+        is_privacy_compute = bool(int(decision))
+
+        # 查找设备条目
+        device = Device.query.filter_by(device_id=device_id).first()
+        if not device:
+            emit('error', {'msg': f'找不到设备 {device_id}'})
+            return
+
+        # 更新字段
+        device.is_privacy_compute = is_privacy_compute
+        db.session.commit()
+
+        print(f'[用户决策] 设备 {device_id} is_privacy_compute 更新为 {is_privacy_compute}')

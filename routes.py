@@ -11,6 +11,11 @@ from cryptography.x509.oid import NameOID
 from flask_mail import Message
 import random, string
 import redis
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
+import base64
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
 
 def register_routes(app,socketio,mail,r):
     @app.route('/')
@@ -56,7 +61,7 @@ def register_routes(app,socketio,mail,r):
             if not email or not code:
                 return jsonify({'status': 'error', 'message': '邮箱和验证码不能为空'}), 400
 
-            key = f'verify_code:{email}'
+            key = f'login_verify_code:{email}'
             real_code = r.get(key)
 
             if not real_code:
@@ -66,12 +71,9 @@ def register_routes(app,socketio,mail,r):
             else:
                 device_id = data.get('device_id')
                 device = Device.query.filter_by(device_id=device_id).first()
-                print(device.user_email)
                 if not device:
-                    print("设备不存在")
                     return jsonify({'status': 'error', 'message': '设备不存在'}), 400
                 elif not device.user_email or device.user_email == email:
-                    print("there a")
                     if not device.user_email:
                         device.user_email = email
                         db.session.commit()
@@ -86,28 +88,77 @@ def register_routes(app,socketio,mail,r):
 
         return jsonify({'status': 'error', 'message': '请用POST传参'}), 500
 
-    # 发送验证码
+        # 解绑邮箱api函数
+    @app.route('/unbind_email', methods=['GET', 'POST'])
+    def unbind_email():
+        if request.method == 'POST':
+            data = request.get_json()
+            email = data.get('email')
+            code = data.get('code')
+            print("code:", code)
+
+            if not email or not code:
+                print('邮箱和验证码不能为空')
+                return jsonify({'status': 'error', 'message': '邮箱和验证码不能为空'}), 400
+
+            key = f'authenticate_verify_code:{email}'
+            real_code = r.get(key)
+
+            if not real_code:
+                print('验证码已过期或未发送')
+                return jsonify({'status': 'error', 'message': '验证码已过期或未发送'}), 400
+            elif code != real_code:
+                print('验证码错误')
+                return jsonify({'status': 'error', 'message': '验证码错误'}), 400
+            else:
+                device_id = data.get('device_id')
+                device = Device.query.filter_by(device_id=device_id).first()
+                if not device:
+                    print('设备不存在')
+                    return jsonify({'status': 'error', 'message': '设备不存在'}), 400
+                if device.user_email != email:
+                    print('这并非你的设备')
+                    return jsonify({'status': 'error', 'message': '这并非你的设备'}), 400
+
+                device.user_email = ""
+                db.session.commit()
+                print("用户解绑设备")
+
+                r.delete(key)  # 释放redis中存储的验证码
+                return jsonify({'status': 'success', 'message': '登录成功'}), 200
+
+        return jsonify({'status': 'error', 'message': '请用POST传参'}), 500
+
+        # 发送验证码
     @app.route('/send-code', methods=['POST'])
     def send_code():
         data = request.get_json()
         email = data.get('email')
+        action = data.get('action')
+        email_info = ""
 
+        if action == 'login':
+            email_info = "登录"
+        elif action == "authenticate":
+            email_info = "修改绑定邮箱"
+        else:
+            return jsonify({'status': 'error', 'message': '未知行为'}), 400
         if not email:
-            return jsonify({'status': 'error', 'message': '邮箱不能为空'})
+            return jsonify({'status': 'error', 'message': '邮箱不能为空'}), 400
 
-        redis_key = f'verify_code:{email}'
+        redis_key = f'{action}_verify_code:{email}'
 
         # 防止重复发送
         if r.get(redis_key):
-            return jsonify({'status': 'error', 'message': '验证码已发送，请稍后再试'})
+            return jsonify({'status': 'error', 'message': '验证码已发送，请稍后再试'}), 400
 
         code = ''.join(random.choices(string.digits, k=6))
 
         try:
             msg = Message(
-                subject='您的登录验证码',
+                subject=f'您的验证码',
                 recipients=[email],
-                body=f'您的验证码是：{code}，5分钟内有效。'
+                body=f'验证码：{code} 用于设备{email_info}，5分钟内有效，请勿泄露和转发。如非本人操作，请忽略此邮件。'
             )
             mail.send(msg)
 
@@ -123,8 +174,6 @@ def register_routes(app,socketio,mail,r):
         session.pop('admin', None)
         flash('您已退出登录', 'info')
         return redirect(url_for('login'))
-
-
 
     @app.route('/request_certificate', methods=['POST'])
     def request_certificate():
@@ -197,6 +246,28 @@ def register_routes(app,socketio,mail,r):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    def load_server_private_key(path="server_private.pem"):
+        with open(path, "rb") as key_file:
+            return serialization.load_pem_private_key(
+                key_file.read(),
+                password=None,
+                backend=default_backend()
+            )
+
+    SERVER_PRIVATE_KEY = load_server_private_key()
+
+    def decrypt_final_result(encrypted_b64: str, private_key) -> float:
+        encrypted = base64.b64decode(encrypted_b64)
+        decrypted_bytes = private_key.decrypt(
+            encrypted,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        return float(decrypted_bytes.decode("utf-8"))
+
     @app.route('/start_chain_computation', methods=['POST'])
     def start_chain_computation():
         if 'admin' not in session:
@@ -238,6 +309,26 @@ def register_routes(app,socketio,mail,r):
     @socketio.on('chain_response')
     def handle_chain_response(data):
         print(f"收到链式计算结果：{data}")
+
+        # 如果是最终处理结果（来自第一个设备）
+        if 'final_result' in data:
+            encrypted_final_result = data.get('final_result')
+            try:
+                decrypted_value = decrypt_final_result(encrypted_final_result, SERVER_PRIVATE_KEY)
+                print(f"✅ 最终链式结果解密成功：{decrypted_value:.2f}")
+                # 保存 flash 信息到 app.config，供下一次请求时使用
+                app.config['FLASH_FLAG'] = {
+                    'message': f"链式计算完成，最终结果为：{decrypted_value:.2f}",
+                    'category': 'success'
+                }
+            except Exception as e:
+                print(f"❌ 最终链式结果解密失败: {e}")
+                app.config['FLASH_FLAG'] = {
+                    'message': f"链式计算结果解密失败：{e}",
+                    'category': 'danger'
+                }
+            return
+
         chain = app.config.get('CHAIN_STATE')
         if not chain:
             return
@@ -258,16 +349,17 @@ def register_routes(app,socketio,mail,r):
                 }, room=chain['websocket_ids'][next_index])
                 chain['current_index'] = next_index
         else:
-            # 最后一个设备处理完毕，返回结果给第一个设备
+            # 最后设备处理完毕，返回最终加密结果给第一个设备
             chain['final_result'] = result
-            print(f"最终结果：{result}")
+            print(f"最终结果（将发回第一个设备）: {result}")
             if chain['websocket_ids'][0]:
                 socketio.emit('chain_complete', {
                     'final_input': result
                 }, room=chain['websocket_ids'][0])
-            # 中转 flash 信息
+
+            # 提示链式计算完成（原始值解密稍后再处理）
             app.config['FLASH_FLAG'] = {
-                'message': f"链式计算完成，最终结果为：{result}",
+                'message': f"链式计算完成，最终结果已加密并返回第一设备等待最终处理。",
                 'category': 'success'
             }
             app.config.pop('CHAIN_STATE', None)
