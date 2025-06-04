@@ -18,6 +18,11 @@ random_number = None
 DEVICE_ID = "1"  # 示例：替换为实际设备ID
 SERVER_URL = "https://localhost:5000"
 
+DEVICE_PRIVATE_KEY = None
+
+# 全局事件对象
+exit_event = threading.Event()
+
 # 创建客户端实例
 client_sio = socketio.Client(ssl_verify=False) #自签名证书，开发环境不验证
 
@@ -48,37 +53,41 @@ def disconnect():
 
 def send_heartbeat():
     """定时发送心跳包（每30秒一次）"""
-    while True:
+    while not exit_event.is_set():
         time.sleep(30)
         try:
             client_sio.emit('heartbeat')
-        except:
+            print("[心跳报文]")
+        except Exception as e:
+            print(f"[心跳错误] {e}")
             break
 
+    print("send_heartbeat结束")
+
 def start_socket():
-    try:
-        # 连接时传递 device_id 和 password
-        client_sio.connect(
-            f'https://localhost:5000?device_id={DEVICE_ID}',
-            transports=['websocket'],
-        )
+    # 启动心跳线程
+    heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
+    heartbeat_thread.start()
+    while not exit_event.is_set():
+        try:
+            # 连接时传递 device_id 和 password
+            client_sio.connect(
+                f'https://localhost:5000?device_id={DEVICE_ID}',
+                transports=['websocket'],
+            )
 
-        # 启动心跳线程
-        heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
-        heartbeat_thread.start()
+            # 轮询
+            while True:
+                if exit_event.is_set():
+                    client_sio.disconnect()
+                time.sleep(1)
 
-        # 用户输入循环
-        while True:
-            msg = input("输入消息（或输入 'exit' 退出）: ")
-            if msg.lower() == 'exit':
-                client_sio.disconnect()
-                break
-            client_sio.send(msg)
-
-    except socketio.exceptions.ConnectionError as e:
-        print(f'[错误] 连接失败: {e}')
-    except KeyboardInterrupt:
-        client_sio.disconnect()
+        except socketio.exceptions.ConnectionError as e:
+            print(f'[错误] 连接失败: {e}')
+        except KeyboardInterrupt:
+            client_sio.disconnect()
+            break
+        time.sleep(5)
 
 def emit_user_decision(device_id, decision, electricity_usage):
     global latest_electricity_usage
@@ -94,7 +103,8 @@ def emit_user_decision(device_id, decision, electricity_usage):
 def load_private_key():
     path = f"device_{DEVICE_ID}_private.pem"
     with open(path, "rb") as key_file:
-        return serialization.load_pem_private_key(
+        global DEVICE_PRIVATE_KEY
+        DEVICE_PRIVATE_KEY = serialization.load_pem_private_key(
             key_file.read(),
             password=None,
             backend=default_backend()
@@ -126,8 +136,6 @@ def decrypt_number(encrypted_b64: str, private_key) -> float:
         padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
     )
     return float(decrypted_bytes.decode("utf-8"))
-
-DEVICE_PRIVATE_KEY = load_private_key()
 
 @client_sio.event
 def chain_step(data):

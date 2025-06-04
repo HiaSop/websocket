@@ -4,7 +4,9 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import Flask, render_template
 from threading import Thread
-from socket_client import start_socket, DEVICE_ID, SERVER_URL, emit_user_decision
+
+from cert_apply import generate_device_certificate
+from socket_client import start_socket, DEVICE_ID, SERVER_URL, emit_user_decision, exit_event
 from flask import request, jsonify
 import json
 
@@ -20,7 +22,7 @@ def index():
     if IS_ACTIVE:
         return redirect(url_for('dashboard'))
     else:
-        return render_template('login.html')
+        return redirect(url_for('login'))
 
 @app.route('/send-code', methods=['POST'])
 def send_code():
@@ -44,37 +46,42 @@ def send_code():
     else:
         return render_template('unbind_email.html', email=email)
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['POST', 'GET'])
 def login():
-    email = request.form.get('email')
-    code = request.form.get('code')
+    global IS_ACTIVE
+    if IS_ACTIVE:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        email = request.form.get('email')
+        code = request.form.get('code')
 
-    try:
-        print(request.form.to_dict())
-        res = requests.post(f'{SERVER_URL}/user_login',json={'email': email, 'code': code, 'device_id': DEVICE_ID},verify=False)
-        if res.status_code == 200:
-            token = res.json().get('token')
-            session['token'] = token
+        try:
+            print(request.form.to_dict())
+            res = requests.post(f'{SERVER_URL}/user_login', json={'email': email, 'code': code, 'device_id': DEVICE_ID},
+                                verify=False)
+            if res.status_code == 200:
 
-            global IS_ACTIVE
-            IS_ACTIVE = True
-            global USER_EMAIL
-            USER_EMAIL = email
+                IS_ACTIVE = True
+                global USER_EMAIL
+                USER_EMAIL = email
+                exit_event.clear()  # 置exit_event为False
+                Thread(target=start_socket).start()  # 开辟新的websocket连接线程
 
-            flash('登录成功', 'success')
-            return redirect(url_for('dashboard'))
-        else:
-            flash(res.json().get('message', '登录失败'), 'danger')
-    except Exception as e:
-        flash(f'请求失败: {e}', 'danger')
+                flash('登录成功', 'success')
+                return redirect(url_for('dashboard'))
+            else:
+                flash(res.json().get('message', '登录失败'), 'danger')
+        except Exception as e:
+            flash(f'请求失败: {e}', 'danger')
 
-    return redirect(url_for('index'))
+        return redirect(url_for('index'))
+    else:
+        return render_template('login.html')
 
 @app.route('/unbind_email', methods=['POST', 'GET'])
 def unbind_mail():
     global USER_EMAIL
     global IS_ACTIVE
-    print("a", IS_ACTIVE)
     if not IS_ACTIVE:
         return redirect(url_for('index'))
     if request.method == 'POST':
@@ -88,6 +95,7 @@ def unbind_mail():
 
                 IS_ACTIVE = False
                 USER_EMAIL = '<EMAIL>'
+                exit_event.set() # 断开websocket连接(thread_event方法告诉线程该退出了)
 
                 flash('解绑成功', 'success')
                 return redirect(url_for('index'))
@@ -103,7 +111,7 @@ def unbind_mail():
 @app.route('/dashboard')
 def dashboard():
     if not IS_ACTIVE:
-        return render_template('login.html')
+        return redirect(url_for('login'))
 
     return render_template('dashboard.html', user_email=USER_EMAIL)
 
@@ -120,5 +128,5 @@ def log_statistics():
 
 
 if __name__ == '__main__':
-    Thread(target=start_socket).start()
+    generate_device_certificate() # 若本地还没有证书，则向服务器提交csr申请证书
     app.run(host='0.0.0.0', port=5001)
