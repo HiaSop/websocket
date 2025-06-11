@@ -12,6 +12,7 @@ import socketio
 from cert_verify import verify_cert_is_signed_by_ca
 
 
+
 latest_electricity_usage = None  # 全局变量，存用电量
 random_number = None
 
@@ -26,6 +27,9 @@ exit_event = threading.Event()
 
 # 创建客户端实例
 client_sio = socketio.Client(ssl_verify=False) #自签名证书，开发环境不验证
+
+# 创建
+socket_io = None
 
 # 发给服务器的，加上时间戳
 def emit_with_timestamp(event_name, payload):
@@ -69,15 +73,17 @@ def send_heartbeat():
 
     print("send_heartbeat结束")
 
-def start_socket():
+def start_socket(socket_io_):
     # 启动心跳线程
     heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
     heartbeat_thread.start()
+    global socket_io
+    socket_io = socket_io_
     while not exit_event.is_set():
         try:
             # 连接时传递 device_id 和 password
             client_sio.connect(
-                f'https://localhost:5000?device_id={DEVICE_ID}',
+                f'{SERVER_URL}?device_id={DEVICE_ID}',
                 transports=['websocket'],
             )
 
@@ -164,6 +170,8 @@ def chain_step(data):
 
     if prev_result is None:
         # 第一个设备：用电量 + 小随机扰动
+        printf = "被选为计算节点"
+        socket_io.emit('remote_message', printf)
         global random_number
         random_number = random.uniform(0.1, 1.0)
         my_usage = latest_electricity_usage + random_number
@@ -181,6 +189,12 @@ def chain_step(data):
         total = prev_value + latest_electricity_usage
         print(f'[链式任务] 当前总电量 = {prev_value:.2f} + {latest_electricity_usage:.2f} = {total:.2f}')
         encrypted_result = encrypt_number(total, target_cert)
+        print(encrypted_result)
+        try:
+            socket_io.emit('remote_message', encrypted_result)
+            print(f"[中转成功]")
+        except Exception as e:
+            print(f"[中转错误]：{e}")
 
     # 发回服务器
     emit_with_timestamp("chain_response", {
@@ -188,6 +202,7 @@ def chain_step(data):
         "result": encrypted_result
     })
     print(f'[链式任务] ✅ 电量加密并发出')
+
 
 # 加载服务器公钥（从 PEM 格式证书中）
 def load_server_public_key(path="server.pem"):
@@ -200,6 +215,7 @@ SERVER_PUBLIC_KEY = load_server_public_key()
 @client_sio.event
 def final_result_broadcast(data):
     print(f'[广播] 收到广播: {data}')
+    socket_io.emit('broadcast', data)
 
 @client_sio.event
 def chain_complete(data):
@@ -210,6 +226,9 @@ def chain_complete(data):
     print(f'[链式任务] 收到最终结果（Base64 编码）: {final_input}')
 
     try:
+        socket_io.emit('remote_message', final_input)
+        print(f"[中转成功]")
+
         # 解密收到的最终结果（用设备私钥）
         load_private_key()
         final_value = decrypt_number(final_input, DEVICE_PRIVATE_KEY) - random_number

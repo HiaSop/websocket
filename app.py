@@ -9,8 +9,18 @@ from cert_apply import generate_device_certificate
 from socket_client import start_socket, DEVICE_ID, SERVER_URL, emit_user_decision, exit_event
 from flask import request, jsonify
 import json
+import threading
+
+
 
 app = Flask(__name__)
+
+from flask_socketio import SocketIO, emit
+socketio = SocketIO(app, async_mode='threading')
+
+def start_websocket_thread():
+    # 启动远程连接并传递socketio对象
+    start_socket(socketio)
 
 app.secret_key = os.getenv('SECRET_KEY', 'local-secret-key')
 
@@ -65,7 +75,7 @@ def login():
                 global USER_EMAIL
                 USER_EMAIL = email
                 exit_event.clear()  # 置exit_event为False
-                Thread(target=start_socket).start()  # 开辟新的websocket连接线程
+                threading.Thread(target=start_websocket_thread, daemon=True).start()
 
                 flash('登录成功', 'success')
                 return redirect(url_for('dashboard'))

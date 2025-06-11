@@ -30,19 +30,19 @@ def verify_cert_is_signed_by_ca(client_cert_pem: bytes, ca_cert_pem: bytes):
     except Exception as e:
         raise RuntimeError(f"[验证出错] {e}")
 
+if __name__ == '__main__':
+    with open("device_certificate.pem", "rb") as f:
+        client_cert_pem = f.read()
 
-with open("device_certificate.pem", "rb") as f:
-    client_cert_pem = f.read()
+    with open("server.crt", "rb") as f:
+        ca_cert_pem = f.read()
 
-with open("server.crt", "rb") as f:
-    ca_cert_pem = f.read()
+    # 验证签名并提取客户端公钥
+    public_key = verify_cert_is_signed_by_ca(client_cert_pem, ca_cert_pem)
 
-# 验证签名并提取客户端公钥
-public_key = verify_cert_is_signed_by_ca(client_cert_pem, ca_cert_pem)
-
-# 打印公钥
-pem = public_key.public_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PublicFormat.SubjectPublicKeyInfo
-)
-print("客户端公钥：\n", pem.decode())
+    # 打印公钥
+    pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    print("客户端公钥：\n", pem.decode())
