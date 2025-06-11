@@ -74,7 +74,7 @@ def login():
         except Exception as e:
             flash(f'请求失败: {e}', 'danger')
 
-        return redirect(url_for('index'))
+        return render_template('login.html', email=email)
     else:
         return render_template('login.html')
 
@@ -124,7 +124,6 @@ def log_statistics():
     emit_user_decision(DEVICE_ID, decision, electricity_usage)
 
     return jsonify({'status': 'ok'})
-
 
 
 if __name__ == '__main__':

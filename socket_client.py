@@ -1,8 +1,6 @@
-import socketio
 import time
 import threading
 import json
-from flask_socketio import SocketIO, send, emit, disconnect
 import random
 import base64
 from cryptography.hazmat.primitives import serialization, hashes
@@ -10,6 +8,9 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
+import socketio
+from cert_verify import verify_cert_is_signed_by_ca
+
 
 latest_electricity_usage = None  # 全局变量，存用电量
 random_number = None
@@ -25,6 +26,11 @@ exit_event = threading.Event()
 
 # 创建客户端实例
 client_sio = socketio.Client(ssl_verify=False) #自签名证书，开发环境不验证
+
+# 发给服务器的，加上时间戳
+def emit_with_timestamp(event_name, payload):
+    payload["timestamp"] = int(time.time())
+    client_sio.emit(event_name, payload)
 
 @client_sio.event
 def connect():
@@ -52,11 +58,10 @@ def disconnect():
     print('[警告] 连接已断开')
 
 def send_heartbeat():
-    """定时发送心跳包（每30秒一次）"""
     while not exit_event.is_set():
         time.sleep(30)
         try:
-            client_sio.emit('heartbeat')
+            emit_with_timestamp('heartbeat', {})  # 加时间戳
             print("[心跳报文]")
         except Exception as e:
             print(f"[心跳错误] {e}")
@@ -97,7 +102,7 @@ def emit_user_decision(device_id, decision, electricity_usage):
     }
     if electricity_usage is not None:
         latest_electricity_usage = float(electricity_usage)
-    client_sio.emit("user_decision", payload)
+    emit_with_timestamp("user_decision", payload)
 
 # 加载自己的私钥
 def load_private_key():
@@ -144,6 +149,13 @@ def chain_step(data):
     prev_result = data.get("prev_result")  # 前一设备传来的加密结果（电量）
     target_cert = data.get("target_cert")  # 下一设备的公钥证书（PEM 字符串）
 
+    # 将 PEM 字符串转为 bytes
+    target_cert_bytes = target_cert.encode("utf-8")
+    # 读取 pem 内容
+    with open("server.pem", "rb") as f:
+        ca_cert_pem = f.read()
+    verify_cert_is_signed_by_ca(target_cert_bytes,ca_cert_pem)
+
     if latest_electricity_usage is None:
         print("[链式任务] ⚠️ 当前未记录用电量，无法处理")
         return
@@ -159,6 +171,7 @@ def chain_step(data):
         encrypted_result = encrypt_number(my_usage, target_cert)
     else:
         try:
+            load_private_key()
             prev_value = decrypt_number(prev_result, DEVICE_PRIVATE_KEY)
             print(f'[链式任务] 解密得到之前总电量: {prev_value:.2f}')
         except Exception as e:
@@ -170,7 +183,7 @@ def chain_step(data):
         encrypted_result = encrypt_number(total, target_cert)
 
     # 发回服务器
-    client_sio.emit("chain_response", {
+    emit_with_timestamp("chain_response", {
         "device_id": DEVICE_ID,
         "result": encrypted_result
     })
@@ -185,6 +198,10 @@ def load_server_public_key(path="server.pem"):
 SERVER_PUBLIC_KEY = load_server_public_key()
 
 @client_sio.event
+def final_result_broadcast(data):
+    print(f'[广播] 收到广播: {data}')
+
+@client_sio.event
 def chain_complete(data):
     global random_number
     print(random_number)
@@ -194,6 +211,7 @@ def chain_complete(data):
 
     try:
         # 解密收到的最终结果（用设备私钥）
+        load_private_key()
         final_value = decrypt_number(final_input, DEVICE_PRIVATE_KEY) - random_number
         print(f'[链式任务] 解密后的最终用电量: {final_value:.2f}')
 
@@ -210,7 +228,7 @@ def chain_complete(data):
         processed = base64.b64encode(re_encrypted).decode("utf-8")
 
         # 发回服务器
-        client_sio.emit("chain_response", {
+        emit_with_timestamp("chain_response", {
             "device_id": DEVICE_ID,
             "final_result": processed
         })

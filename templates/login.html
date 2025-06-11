@@ -24,18 +24,19 @@
 
       <!-- 表单 -->
       <form method="POST" action="/login">
-        <div class="mb-3">
           <label for="email" class="form-label">邮箱</label>
+        <div class="input-group">
+
           <input type="email" class="form-control" id="email" name="email" value="{{ request.form.get('email', '') }}" required />
           <input type="hidden" name="action" value="login" />
+            <button class="btn btn-outline-secondary" type="button" onclick="this.form.action='/send-code'; this.form.submit();">
+                发送验证码
+            </button>
         </div>
         <div class="mb-3">
           <label for="code" class="form-label">验证码</label>
-          <div class="input-group">
+          <div class="mb-3">
             <input type="text" class="form-control" id="code" name="code" />
-            <button class="btn btn-outline-secondary" type="submit" formaction="/send-code" formmethod="post">
-              发送验证码
-            </button>
           </div>
         </div>
         <button type="submit" class="btn btn-primary w-100">登录</button>
