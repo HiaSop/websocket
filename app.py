@@ -7,15 +7,26 @@ from socket_events import register_socket_events
 from routes import register_routes
 from flask_mail import Mail
 import redis
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 app = Flask(__name__)
 # 允许所有跨域
 app.config.from_object(Config)
-db.init_app(app)
+
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 初始化邮箱
+# 初始化
+db.init_app(app)
 mail = Mail(app)
+
+
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    storage_uri=app.config["RATELIMIT_STORAGE_URL"]
+)
 
 # 初始化 Redis
 r = redis.StrictRedis(
@@ -25,8 +36,26 @@ r = redis.StrictRedis(
     decode_responses=True
 )
 
-register_routes(app,socketio,mail,r)
+from routes import register_routes  # 延迟导入，避免循环
+from socket_events import register_socket_events
+register_routes(app,socketio,mail,r, limiter)
 register_socket_events(socketio)
+
+def push_flash_message(message, category='success'):
+    data = {
+        'message': message,
+        'category': category
+    }
+    socketio.emit('flash_message', data)
+    print('已推送消息:', data)
+
+# 这里模拟定时任务或链式计算完成时调用
+@app.route('/send_message')
+def send_message():
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    push_flash_message(f"链式计算完成，时间：{now}", 'success')
+    return "消息已推送"
+
 
 if __name__ == '__main__':
     print("✅ 启动服务器：https://localhost:5000")
