@@ -3,6 +3,8 @@ import threading
 import json
 import random
 import base64
+from datetime import datetime
+
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography import x509
@@ -201,6 +203,7 @@ def chain_step(data):
         "device_id": DEVICE_ID,
         "result": encrypted_result
     })
+    print(encrypted_result)
     print(f'[链式任务] ✅ 电量加密并发出')
 
 
@@ -215,7 +218,44 @@ SERVER_PUBLIC_KEY = load_server_public_key()
 @client_sio.event
 def final_result_broadcast(data):
     print(f'[广播] 收到广播: {data}')
-    socket_io.emit('broadcast', data)
+
+    decrypted_value = data.get('decrypted_value')
+    timestamp = data.get('timestamp')
+    signature_b64 = data.get('signature')
+
+    if decrypted_value is None or signature_b64 is None:
+        print("❌ 缺失必要字段，无法验证签名")
+        return
+
+    # 签名验证
+    try:
+        signature = base64.b64decode(signature_b64)
+        SERVER_PUBLIC_KEY.verify(
+            signature,
+            str(decrypted_value).encode('utf-8'),
+            padding.PKCS1v15(),
+            hashes.SHA256()
+        )
+        print("✅ 签名验证通过")
+    except Exception as e:
+        print(f"❌ 签名验证失败：{e}")
+        return
+
+    # 时间戳格式规范（兼容字符串和 None）
+    if timestamp:
+        try:
+            # 如果是字符串 'YYYY-MM-DD HH:MM:SS' 就直接用
+            readable_time = timestamp if isinstance(timestamp, str) else datetime.fromtimestamp(float(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            readable_time = "无效时间"
+    else:
+        readable_time = "无时间信息"
+
+    # 发给前端
+    socket_io.emit('broadcast', {
+        "decrypted_value": decrypted_value,
+        "timestamp": readable_time
+    })
 
 @client_sio.event
 def chain_complete(data):

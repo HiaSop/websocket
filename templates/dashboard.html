@@ -149,7 +149,7 @@
             <p><b>时间戳：</b>${data.timestamp}</p>
         `;
         Swal.fire({
-            title: '📢 接收到广播消息',
+            title: '📢 收到广播消息，签名验证成功',
             html: message,
             icon: 'info',
             showConfirmButton: true,
@@ -174,7 +174,7 @@
                 if (result.isConfirmed) {
                     Swal.fire({
                         title: '感谢参与！',
-                        text: '请输入当前单位的用电量（千瓦时）:',
+                        text: '请输入当前单位的用电量（度）:',
                         input: 'number',
                         inputPlaceholder: '例如：350',
                         inputAttributes: {
@@ -186,7 +186,7 @@
                     }).then((inputResult) => {
                         if (inputResult.isConfirmed) {
                             let usage = inputResult.value || '未提供';
-                            Swal.fire('✅ 已记录', `您填写的用电量是：${usage} 千瓦时`, 'success');
+                            Swal.fire('✅ 已记录', `您填写的用电量是：${usage} 度`, 'success');
 
                             fetch('/log-statistics', {
                                 method: 'POST',
