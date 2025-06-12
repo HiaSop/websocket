@@ -344,7 +344,7 @@ def register_routes(app,socketio,mail,r, limiter):
 
                 # 前端显示
                 result = round(decrypted_value, 2)
-                msg = f"最终统计结果为：{result}度, 时间：{readable_time}"
+                msg = f"最终统计结果为：{result}度, 时间：{readable_time}, 结果已返回给各参与计算节点"
                 def delayed_emit(message, delay=1):
                     time.sleep(delay)  # 延迟1秒
                     socketio.emit('middle', message)
